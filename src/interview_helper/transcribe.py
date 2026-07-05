@@ -17,6 +17,31 @@ class Utterance:
     timestamp: float
 
 
+def _load_model(model_size: str):
+    """CUDA при наличии GPU и extra `gpu`, иначе CPU/int8 на всех ядрах."""
+    import os
+
+    from faster_whisper import WhisperModel
+
+    try:
+        for pkg in ("cublas", "cudnn"):
+            import importlib.util
+
+            spec = importlib.util.find_spec(f"nvidia.{pkg}")
+            if spec and spec.submodule_search_locations:
+                bin_dir = os.path.join(spec.submodule_search_locations[0], "bin")
+                os.add_dll_directory(bin_dir)
+                # ctranslate2 грузит DLL обычным поиском — нужен и PATH
+                os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+        model = WhisperModel(model_size, device="cuda", compute_type="float16")
+        return model, "cuda"
+    except Exception:
+        model = WhisperModel(
+            model_size, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4
+        )
+        return model, "cpu"
+
+
 class Transcriber:
     """Копит речь по источникам и финализирует реплику по паузе.
 
@@ -31,9 +56,7 @@ class Transcriber:
         pause_chunks: int = 2,
         max_seconds: float = 15.0,
     ) -> None:
-        from faster_whisper import WhisperModel
-
-        self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        self.model, self.device = _load_model(model_size)
         self.language = language
         self.pause_chunks = pause_chunks
         self.max_seconds = max_seconds

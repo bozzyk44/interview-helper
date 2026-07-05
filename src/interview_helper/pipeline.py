@@ -57,8 +57,9 @@ def _run(
     language: str | None,
     answer_mic: bool,
 ) -> None:
-    emit({"type": "status", "text": f"Загружаю whisper ({model_size}, int8)..."})
+    emit({"type": "status", "text": f"Загружаю whisper ({model_size})..."})
     transcriber = Transcriber(model_size=model_size, language=language)
+    emit({"type": "status", "text": f"whisper {model_size} на {transcriber.device}, слушаю..."})
     answerer = Answerer(answer_mic=answer_mic)
 
     if input_file:

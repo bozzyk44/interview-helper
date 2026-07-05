@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import json
 import shutil
 import subprocess
@@ -57,7 +58,31 @@ QUESTION_WORDS = (
     "explain",
     "describe",
     "difference",
+    "разниц",
+    "отлича",
 )
+
+# полные формы для fuzzy-сопоставления: whisper часто коверкает первое слово
+# ("Весните" вместо "Объясните"), точный префикс такое не ловит
+FUZZY_QUESTION_WORDS = (
+    "расскажите",
+    "подскажите",
+    "объясните",
+    "опишите",
+    "почему",
+    "зачем",
+    "сколько",
+    "можете",
+    "explain",
+    "describe",
+)
+
+
+def _fuzzy_question_word(word: str) -> bool:
+    # императив на -ите/-йте («покажите», исковерканное «весните») — просьба
+    if len(word) >= 6 and word.endswith(("ите", "йте")):
+        return True
+    return any(difflib.SequenceMatcher(None, word, q).ratio() >= 0.72 for q in FUZZY_QUESTION_WORDS)
 
 
 class Answerer:
@@ -79,8 +104,10 @@ class Answerer:
         text = utt.text.lower()
         if "?" in text:
             return True
-        head = text.replace(",", " ").split()[:5]
-        return any(word.startswith(q) for word in head for q in QUESTION_WORDS)
+        head = text.replace(",", " ").replace(".", " ").split()[:5]
+        if any(word.startswith(q) for word in head for q in QUESTION_WORDS):
+            return True
+        return any(_fuzzy_question_word(word) for word in head)
 
     def cancel(self) -> None:
         """Прерывает текущий ответ (новый вопрос вытесняет старый)."""

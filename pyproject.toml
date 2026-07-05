@@ -12,6 +12,10 @@ dependencies = [
     "uvicorn>=0.34",
 ]
 
+[project.optional-dependencies]
+# GPU-транскрипция: uv sync --extra gpu (нужна NVIDIA-карта, драйвер CUDA 12+)
+gpu = ["nvidia-cublas-cu12", "nvidia-cudnn-cu12>=9,<10"]
+
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.15"]
 
