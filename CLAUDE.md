@@ -13,13 +13,15 @@ uv sync                                            # установка зави
 uv run pytest -q                                   # все тесты
 uv run pytest -q tests/test_answer.py -k question  # один тест
 uv run ruff format . ; uv run ruff check --fix .   # формат + линт
+uv run python -m interview_helper.web              # веб-UI на http://localhost:8765
 uv run python -m interview_helper.main --input-file <wav>  # отладочный прогон на файле
+uv run python -m interview_helper.main --list-devices      # аудиоустройства (WASAPI)
 uv run python -m interview_helper.bench <wav>      # бенчмарк латентности
 ```
 
 Живой запуск (`main` без `--input-file`) включает захват микрофона — его запускает пользователь, не Claude (страхует хук guard_run).
 
-Код лежит в `src/interview_helper/`: `capture.py` (аудио) → `transcribe.py` (whisper) → `answer.py` (детекция вопроса + `claude -p`) → `main.py` (связка и вывод). Оценка ресурсов whisper — в `docs/resources.md`.
+Код лежит в `src/interview_helper/`: `capture.py` (аудио, выбор устройств — только WASAPI host API) → `transcribe.py` (whisper) → `answer.py` (детекция вопроса + `claude -p`) → `pipeline.py` (общий цикл с колбэком событий). Поверх пайплайна два фронтенда: `main.py` (терминал, rich) и `web.py` + `static/index.html` (FastAPI + SSE, порт 8765). Оценка ресурсов whisper — в `docs/resources.md`.
 
 ## Стек
 

@@ -33,13 +33,54 @@ def _resample_mono(raw: np.ndarray, channels: int, rate: int) -> np.ndarray:
     return raw.astype(np.float32)
 
 
+def list_devices() -> dict[str, list[dict]]:
+    """Доступные устройства: микрофоны и WASAPI loopback-выходы."""
+    import pyaudiowpatch as pyaudio
+
+    pa = pyaudio.PyAudio()
+    try:
+        mics, loopbacks = [], []
+        default_mic_info = pa.get_default_input_device_info()
+        default_mic = default_mic_info["index"]
+        # дефолтный вход обычно числится за MME с обрезанным именем — сопоставляем по имени
+        default_mic_name = str(default_mic_info["name"])
+        default_lb = pa.get_default_wasapi_loopback()["index"]
+        wasapi = pa.get_host_api_info_by_type(pyaudio.paWASAPI)["index"]
+        for i in range(pa.get_device_count()):
+            d = pa.get_device_info_by_index(i)
+            # только WASAPI: другие host API (MME, DirectSound) дублируют те же устройства
+            if d["maxInputChannels"] < 1 or d["hostApi"] != wasapi:
+                continue
+            entry = {"index": i, "name": d["name"]}
+            if d.get("isLoopbackDevice"):
+                entry["default"] = i == default_lb
+                loopbacks.append(entry)
+            else:
+                entry["default"] = i == default_mic or str(d["name"]).startswith(
+                    default_mic_name[:31]  # MME обрезает имена до 31 символа
+                )
+                mics.append(entry)
+        # дефолтный вход может числиться за другим host API — тогда помечаем первый WASAPI-мик
+        if mics and not any(m["default"] for m in mics):
+            mics[0]["default"] = True
+        return {"mic": mics, "loopback": loopbacks}
+    finally:
+        pa.terminate()
+
+
 def _stream_worker(
-    out: queue.Queue[AudioChunk], source: Source, stop: threading.Event, loopback: bool
+    out: queue.Queue[AudioChunk],
+    source: Source,
+    stop: threading.Event,
+    loopback: bool,
+    device_index: int | None = None,
 ) -> None:
     import pyaudiowpatch as pyaudio
 
     pa = pyaudio.PyAudio()
-    if loopback:
+    if device_index is not None:
+        device = pa.get_device_info_by_index(device_index)
+    elif loopback:
         device = pa.get_default_wasapi_loopback()
     else:
         device = pa.get_default_input_device_info()
@@ -63,12 +104,19 @@ def _stream_worker(
         pa.terminate()
 
 
-def start_live_capture(out: queue.Queue[AudioChunk]) -> threading.Event:
+def start_live_capture(
+    out: queue.Queue[AudioChunk],
+    mic_device: int | None = None,
+    loopback_device: int | None = None,
+) -> threading.Event:
     """Запускает оба потока захвата; возвращает Event для остановки."""
     stop = threading.Event()
-    for source, loopback in (("loopback", True), ("mic", False)):
+    for source, loopback, device in (
+        ("loopback", True, loopback_device),
+        ("mic", False, mic_device),
+    ):
         threading.Thread(
-            target=_stream_worker, args=(out, source, stop, loopback), daemon=True
+            target=_stream_worker, args=(out, source, stop, loopback, device), daemon=True
         ).start()
     return stop
 

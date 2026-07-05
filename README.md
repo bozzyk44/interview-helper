@@ -24,8 +24,16 @@ loopback (звук встречи) ─┐
 ```powershell
 uv sync
 
-# живая сессия (микрофон + звук системы)
+# веб-интерфейс (рекомендуется): http://localhost:8765
+# выбор устройств, модели, режима файл/живой звук — кнопками
+uv run python -m interview_helper.web
+
+# терминальный вариант: живая сессия (микрофон + звук системы)
 uv run python -m interview_helper.main
+
+# список аудиоустройств и выбор конкретных
+uv run python -m interview_helper.main --list-devices
+uv run python -m interview_helper.main --mic-device 30 --loopback-device 33
 
 # отладка на записанном WAV
 uv run python -m interview_helper.main --input-file tests/fixtures/question.wav
