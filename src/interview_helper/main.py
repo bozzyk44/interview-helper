@@ -17,6 +17,10 @@ def main() -> None:
     parser.add_argument("--mic-device", type=int, help="индекс микрофона (см. --list-devices)")
     parser.add_argument("--loopback-device", type=int, help="индекс loopback-устройства")
     parser.add_argument("--list-devices", action="store_true", help="показать устройства и выйти")
+    parser.add_argument("--language", help="язык сессии для whisper: ru / en (по умолчанию авто)")
+    parser.add_argument(
+        "--answer-mic", action="store_true", help="отвечать и на вопросы с микрофона (отладка)"
+    )
     args = parser.parse_args()
 
     if args.list_devices:
@@ -58,6 +62,8 @@ def main() -> None:
             model_size=args.model,
             mic_device=args.mic_device,
             loopback_device=args.loopback_device,
+            language=args.language,
+            answer_mic=args.answer_mic,
         )
     except KeyboardInterrupt:
         stop.set()

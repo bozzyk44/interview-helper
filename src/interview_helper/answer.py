@@ -19,9 +19,50 @@ SYSTEM_PROMPT = (
 CONTEXT_CHARS = 6000  # ~2000 токенов скользящего окна
 
 
+# вопрос распознаём, если одно из этих слов встретилось в начале реплики
+QUESTION_WORDS = (
+    "расскаж",
+    "подскаж",
+    "объясн",
+    "опиши",
+    "почему",
+    "зачем",
+    "кто",
+    "что",
+    "как",
+    "какой",
+    "какая",
+    "какие",
+    "каких",
+    "сколько",
+    "где",
+    "когда",
+    "чем",
+    "можете",
+    "можешь",
+    "есть ли",
+    "в чём",
+    "в чем",
+    "what",
+    "how",
+    "why",
+    "who",
+    "when",
+    "where",
+    "which",
+    "can",
+    "could",
+    "tell",
+    "explain",
+    "describe",
+    "difference",
+)
+
+
 class Answerer:
-    def __init__(self, model: str = "haiku") -> None:
+    def __init__(self, model: str = "haiku", answer_mic: bool = False) -> None:
         self.model = model
+        self.answer_mic = answer_mic  # отладка: реагировать и на вопросы с микрофона
         self.history: deque[Utterance] = deque()
 
     def add(self, utt: Utterance) -> None:
@@ -30,23 +71,14 @@ class Answerer:
             self.history.popleft()
 
     def is_question(self, utt: Utterance) -> bool:
-        """MVP-эвристика: реплика интервьюера с вопросительным знаком или вопросительным словом."""
-        if utt.source != "loopback":
+        """Эвристика: «?» в тексте или вопросительное слово в первых словах реплики."""
+        if utt.source != "loopback" and not self.answer_mic:
             return False
         text = utt.text.lower()
-        starters = (
-            "расскаж",
-            "как ",
-            "почему",
-            "что ",
-            "какой",
-            "can you",
-            "what",
-            "how",
-            "why",
-            "tell me",
-        )
-        return "?" in text or text.startswith(starters)
+        if "?" in text:
+            return True
+        head = text.replace(",", " ").split()[:5]
+        return any(word.startswith(q) for word in head for q in QUESTION_WORDS)
 
     def stream_answer(self, question: Utterance) -> Iterator[str]:
         """Стримит текст ответа по мере генерации."""

@@ -22,8 +22,16 @@ def test_is_question_heuristics():
     a = Answerer()
     assert a.is_question(_utt("Расскажите о вашем опыте?"))
     assert a.is_question(_utt("what is a closure"))
+    assert a.is_question(_utt("Подскажите, какие бывают статусы ошибок HTTP"))
+    assert a.is_question(_utt("Объясните разницу между списком и кортежем"))
     assert not a.is_question(_utt("Отлично, идём дальше."))
     assert not a.is_question(_utt("Как это работает?", source="mic"))  # свой голос — не вопрос
+
+
+def test_answer_mic_mode():
+    a = Answerer(answer_mic=True)
+    assert a.is_question(_utt("Какие бывают статусы ошибок HTTP?", source="mic"))
+    assert not a.is_question(_utt("Сейчас говорю я.", source="mic"))
 
 
 def test_history_window_trims():

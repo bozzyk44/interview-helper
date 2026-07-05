@@ -12,7 +12,7 @@ from typing import Literal
 import numpy as np
 
 SAMPLE_RATE = 16_000  # целевой sample rate для whisper
-CHUNK_SECONDS = 1.0
+CHUNK_SECONDS = 0.5  # мелкие чанки => быстрая реакция на паузу (see transcribe.pause_chunks)
 
 Source = Literal["loopback", "mic"]
 

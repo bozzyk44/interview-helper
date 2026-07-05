@@ -35,6 +35,8 @@ class StartRequest(BaseModel):
     model: str = "small"
     mic_device: int | None = None
     loopback_device: int | None = None
+    language: str | None = None  # None = автоопределение, иначе "ru" / "en"
+    answer_mic: bool = False
 
 
 @app.get("/api/devices")
@@ -67,6 +69,8 @@ def start(req: StartRequest) -> dict:
                 "model_size": req.model,
                 "mic_device": req.mic_device,
                 "loopback_device": req.loopback_device,
+                "language": req.language,
+                "answer_mic": req.answer_mic,
             },
             daemon=True,
         )

@@ -20,6 +20,7 @@
   #stop  { background: #b3423f; color: #fff; }
   button:disabled { opacity: .45; cursor: default; }
   #status { margin-left: auto; color: #8a919e; font-size: 13px; }
+  header label { font-size: 13px; color: #b8bec8; display: flex; align-items: center; gap: 4px; }
   main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
          background: #2b2f38; overflow: hidden; }
   section { background: #14161a; overflow-y: auto; padding: 14px 16px; }
@@ -50,8 +51,16 @@
     <option selected>small</option>
     <option>medium</option>
   </select>
+  <select id="lang" title="Язык сессии">
+    <option value="">язык: авто</option>
+    <option value="ru">язык: русский</option>
+    <option value="en">язык: английский</option>
+  </select>
   <select id="mic" title="Микрофон"></select>
   <select id="loopback" title="Звук системы (loopback)"></select>
+  <label title="Отладка: обычно вопросы приходят только из звука встречи">
+    <input type="checkbox" id="answerMic"> отвечать на мой микрофон
+  </label>
   <button id="start">Старт</button>
   <button id="stop" disabled>Стоп</button>
   <span id="status">не запущено</span>
@@ -89,6 +98,8 @@ $("start").onclick = async () => {
     mode: $("mode").value, path: $("path").value || null, model: $("model").value,
     mic_device: $("mic").value ? +$("mic").value : null,
     loopback_device: $("loopback").value ? +$("loopback").value : null,
+    language: $("lang").value || null,
+    answer_mic: $("answerMic").checked,
   };
   const r = await (await fetch("/api/start", { method: "POST",
     headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();

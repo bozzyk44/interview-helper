@@ -35,6 +35,10 @@ uv run python -m interview_helper.main
 uv run python -m interview_helper.main --list-devices
 uv run python -m interview_helper.main --mic-device 30 --loopback-device 33
 
+# язык сессии (по умолчанию автоопределение) и отладочный режим
+# --answer-mic: отвечать и на вопросы, сказанные в микрофон
+uv run python -m interview_helper.main --language ru --answer-mic
+
 # отладка на записанном WAV
 uv run python -m interview_helper.main --input-file tests/fixtures/question.wav
 
