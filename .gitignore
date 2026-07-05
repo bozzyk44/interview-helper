@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+dist/
+
+# персональные данные — не публиковать
+context/
+sessions/
+profile.md
+
+# локальные настройки Claude Code
+.claude/settings.local.json

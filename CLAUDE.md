@@ -6,7 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Цель: считывать звук встречи (системный аудиовыход) и микрофона, транскрибировать его и отвечать на вопросы **в реальном времени**.
 
-Статус: репозиторий пуст — проект на стадии инициализации. Ниже зафиксирован согласованный стек и архитектура; при появлении кода обновляйте этот файл (команды сборки/запуска/тестов).
+## Команды
+
+```powershell
+uv sync                                            # установка зависимостей
+uv run pytest -q                                   # все тесты
+uv run pytest -q tests/test_answer.py -k question  # один тест
+uv run ruff format . ; uv run ruff check --fix .   # формат + линт
+uv run python -m interview_helper.main --input-file <wav>  # отладочный прогон на файле
+uv run python -m interview_helper.bench <wav>      # бенчмарк латентности
+```
+
+Живой запуск (`main` без `--input-file`) включает захват микрофона — его запускает пользователь, не Claude (страхует хук guard_run).
+
+Код лежит в `src/interview_helper/`: `capture.py` (аудио) → `transcribe.py` (whisper) → `answer.py` (детекция вопроса + `claude -p`) → `main.py` (связка и вывод). Оценка ресурсов whisper — в `docs/resources.md`.
 
 ## Стек
 
