@@ -68,39 +68,68 @@ def list_devices() -> dict[str, list[dict]]:
         pa.terminate()
 
 
-def _stream_worker(
+def _live_worker(
     out: queue.Queue[AudioChunk],
-    source: Source,
     stop: threading.Event,
-    loopback: bool,
-    device_index: int | None = None,
+    mic_device: int | None,
+    loopback_device: int | None,
 ) -> None:
+    """Callback-захват обоих источников на одном PyAudio.
+
+    Блокирующий stream.read() здесь нельзя: WASAPI loopback при тишине не отдаёт
+    кадров, чтение виснет, а параллельные блокирующие потоки роняют процесс.
+    """
     import pyaudiowpatch as pyaudio
 
     pa = pyaudio.PyAudio()
-    if device_index is not None:
-        device = pa.get_device_info_by_index(device_index)
-    elif loopback:
-        device = pa.get_default_wasapi_loopback()
-    else:
-        device = pa.get_default_input_device_info()
-    rate = int(device["defaultSampleRate"])
-    channels = int(device["maxInputChannels"])
-    frames = int(rate * CHUNK_SECONDS)
-    stream = pa.open(
-        format=pyaudio.paFloat32,
-        channels=channels,
-        rate=rate,
-        input=True,
-        input_device_index=device["index"],
-        frames_per_buffer=frames,
-    )
+    acc: dict[Source, list[np.ndarray]] = {"loopback": [], "mic": []}
+    lock = threading.Lock()
+    streams = []
     try:
+        for source, loopback, override in (
+            ("loopback", True, loopback_device),
+            ("mic", False, mic_device),
+        ):
+            if override is not None:
+                device = pa.get_device_info_by_index(override)
+            elif loopback:
+                device = pa.get_default_wasapi_loopback()
+            else:
+                device = pa.get_default_input_device_info()
+            rate = int(device["defaultSampleRate"])
+            channels = int(device["maxInputChannels"])
+
+            def cb(in_data, frame_count, time_info, status, s=source, ch=channels, r=rate):
+                data = np.frombuffer(in_data, np.float32)
+                with lock:
+                    acc[s].append(_resample_mono(data, ch, r))
+                return (None, pyaudio.paContinue)
+
+            streams.append(
+                pa.open(
+                    format=pyaudio.paFloat32,
+                    channels=channels,
+                    rate=rate,
+                    input=True,
+                    input_device_index=device["index"],
+                    frames_per_buffer=2048,
+                    stream_callback=cb,
+                )
+            )
+        target = int(SAMPLE_RATE * CHUNK_SECONDS)
         while not stop.is_set():
-            data = np.frombuffer(stream.read(frames, exception_on_overflow=False), np.float32)
-            out.put(AudioChunk(source, _resample_mono(data, channels, rate), time.time()))
+            time.sleep(0.2)
+            for source in ("loopback", "mic"):
+                with lock:
+                    if sum(len(a) for a in acc[source]) < target:
+                        continue
+                    samples = np.concatenate(acc[source])
+                    acc[source] = []
+                out.put(AudioChunk(source, samples, time.time()))
     finally:
-        stream.close()
+        for s in streams:
+            s.stop_stream()
+            s.close()
         pa.terminate()
 
 
@@ -109,15 +138,11 @@ def start_live_capture(
     mic_device: int | None = None,
     loopback_device: int | None = None,
 ) -> threading.Event:
-    """Запускает оба потока захвата; возвращает Event для остановки."""
+    """Запускает захват; возвращает Event для остановки."""
     stop = threading.Event()
-    for source, loopback, device in (
-        ("loopback", True, loopback_device),
-        ("mic", False, mic_device),
-    ):
-        threading.Thread(
-            target=_stream_worker, args=(out, source, stop, loopback, device), daemon=True
-        ).start()
+    threading.Thread(
+        target=_live_worker, args=(out, stop, mic_device, loopback_device), daemon=True
+    ).start()
     return stop
 
 

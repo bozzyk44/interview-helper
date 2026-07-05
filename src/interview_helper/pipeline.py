@@ -26,6 +26,23 @@ def run_pipeline(
     loopback_device: int | None = None,
 ) -> None:
     chunks: queue.Queue[AudioChunk] = queue.Queue()
+    try:
+        _run(emit, stop, chunks, input_file, model_size, mic_device, loopback_device)
+    except Exception as e:  # noqa: BLE001 — поток фоновый, ошибку показываем пользователю
+        emit({"type": "status", "text": f"Ошибка: {e!r}"})
+    finally:
+        emit({"type": "status", "text": "Остановлено"})
+
+
+def _run(
+    emit: Emit,
+    stop: threading.Event,
+    chunks: queue.Queue[AudioChunk],
+    input_file: str | None,
+    model_size: str,
+    mic_device: int | None,
+    loopback_device: int | None,
+) -> None:
     emit({"type": "status", "text": f"Загружаю whisper ({model_size}, int8)..."})
     transcriber = Transcriber(model_size=model_size)
     answerer = Answerer()
@@ -39,26 +56,33 @@ def run_pipeline(
         )
         emit({"type": "status", "text": "Слушаю встречу и микрофон"})
 
+    def handle(utt) -> None:
+        emit({"type": "utterance", "source": utt.source, "text": utt.text})
+        answerer.add(utt)
+        if answerer.is_question(utt):
+            emit({"type": "answer_start", "question": utt.text})
+            for delta in answerer.stream_answer(utt):
+                if stop.is_set():
+                    break
+                emit({"type": "answer_delta", "text": delta})
+            emit({"type": "answer_end"})
+
     try:
+        idle = 0
         while not stop.is_set():
             try:
-                chunk = chunks.get(timeout=5)
+                chunk = chunks.get(timeout=1)
             except queue.Empty:
-                if input_file:
+                # тишина: дожимаем недосказанные реплики (loopback молчит без звука)
+                for utt in transcriber.flush_stale():
+                    handle(utt)
+                idle += 1
+                if input_file and idle >= 5:
                     break  # файл закончился
                 continue
+            idle = 0
             utt = transcriber.feed(chunk)
-            if utt is None:
-                continue
-            emit({"type": "utterance", "source": utt.source, "text": utt.text})
-            answerer.add(utt)
-            if answerer.is_question(utt):
-                emit({"type": "answer_start", "question": utt.text})
-                for delta in answerer.stream_answer(utt):
-                    if stop.is_set():
-                        break
-                    emit({"type": "answer_delta", "text": delta})
-                emit({"type": "answer_end"})
+            if utt is not None:
+                handle(utt)
     finally:
         capture_stop.set()
-        emit({"type": "status", "text": "Остановлено"})
