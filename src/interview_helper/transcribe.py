@@ -82,7 +82,9 @@ class Transcriber:
         self._last_feed[s] = time.time()
         if self._is_silent(s, chunk.samples):
             if not self._has_speech[s]:
-                self._buffers[s] = []  # тишину до речи не копим
+                # pre-roll: держим последний тихий чанк — речь часто начинается
+                # в середине чанка, и без него глотается начало фразы
+                self._buffers[s] = [chunk]
                 return None
             self._buffers[s].append(chunk)
             self._silent_run[s] += 1
