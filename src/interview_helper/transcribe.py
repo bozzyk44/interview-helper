@@ -41,11 +41,23 @@ class Transcriber:
         self._has_speech: dict[Source, bool] = {"loopback": False, "mic": False}
         self._silent_run: dict[Source, int] = {"loopback": 0, "mic": 0}
         self._last_feed: dict[Source, float] = {"loopback": 0.0, "mic": 0.0}
+        self._floor: dict[Source, float] = {"loopback": 0.002, "mic": 0.002}
+
+    def _is_silent(self, source: Source, samples: np.ndarray) -> bool:
+        """Тишина относительно адаптивного шумового пола источника.
+
+        Фиксированный порог не работает: вентилятор/кулер держат RMS микрофона
+        выше любой константы, и паузы не распознаются. Пол быстро опускается до
+        уровня тихих чанков и медленно ползёт вверх, речь = заметно громче пола.
+        """
+        rms = float(np.sqrt(np.mean(samples**2)))
+        self._floor[source] = min(rms + 1e-6, self._floor[source] * 1.03)
+        return rms < max(0.004, self._floor[source] * 2.5)
 
     def feed(self, chunk: AudioChunk) -> Utterance | None:
         s = chunk.source
         self._last_feed[s] = time.time()
-        if _is_silence(chunk.samples):
+        if self._is_silent(s, chunk.samples):
             if not self._has_speech[s]:
                 self._buffers[s] = []  # тишину до речи не копим
                 return None
@@ -91,7 +103,3 @@ class Transcriber:
         )
         text = " ".join(s.text.strip() for s in segments).strip()
         return Utterance(source, text, ts) if text else None
-
-
-def _is_silence(samples: np.ndarray, threshold: float = 0.01) -> bool:
-    return float(np.sqrt(np.mean(samples**2))) < threshold
