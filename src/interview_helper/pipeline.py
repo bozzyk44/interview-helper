@@ -27,6 +27,8 @@ def run_pipeline(
     language: str | None = None,
     answer_mic: bool = False,
     register_ask: Callable[[Callable[[str], None]], None] | None = None,
+    answer_model: str = "haiku",
+    effort: str | None = None,
 ) -> None:
     chunks: queue.Queue[AudioChunk] = queue.Queue()
     try:
@@ -41,6 +43,8 @@ def run_pipeline(
             language,
             answer_mic,
             register_ask,
+            answer_model,
+            effort,
         )
     except Exception as e:  # noqa: BLE001 — поток фоновый, ошибку показываем пользователю
         emit({"type": "status", "text": f"Ошибка: {e!r}"})
@@ -59,11 +63,20 @@ def _run(
     language: str | None,
     answer_mic: bool,
     register_ask: Callable[[Callable[[str], None]], None] | None = None,
+    answer_model: str = "haiku",
+    effort: str | None = None,
 ) -> None:
     emit({"type": "status", "text": f"Загружаю whisper ({model_size})..."})
     transcriber = Transcriber(model_size=model_size, language=language)
-    emit({"type": "status", "text": f"whisper {model_size} на {transcriber.device}, слушаю..."})
-    answerer = Answerer(answer_mic=answer_mic)
+    answerer = Answerer(model=answer_model, answer_mic=answer_mic, effort=effort)
+    effort_note = f", effort {answerer.effort}" if answerer.effort else ""
+    emit(
+        {
+            "type": "status",
+            "text": f"whisper {model_size} на {transcriber.device}, "
+            f"ответы: {answer_model}{effort_note}",
+        }
+    )
 
     if input_file:
         capture_stop = start_file_capture(chunks, input_file)

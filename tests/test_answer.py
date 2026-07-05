@@ -41,6 +41,17 @@ def test_answer_mic_mode():
     assert not a.is_question(_utt("Сейчас говорю я.", source="mic"))
 
 
+def test_resolve_effort():
+    from interview_helper.answer import resolve_effort
+
+    assert resolve_effort("haiku", "high") is None  # haiku не поддерживает effort
+    assert resolve_effort("sonnet", "max") == "max"
+    assert resolve_effort("opus", "high") == "medium"  # opus капнут на medium
+    assert resolve_effort("opus", "low") == "low"
+    assert resolve_effort("sonnet", None) is None
+    assert resolve_effort("sonnet", "bogus") is None
+
+
 def test_history_window_trims():
     a = Answerer()
     for _ in range(50):

@@ -38,6 +38,10 @@ class StartRequest(BaseModel):
     loopback_device: int | None = None
     language: str | None = None  # None = автоопределение, иначе "ru" / "en"
     answer_mic: bool = False
+    answer_model: str = "haiku"  # haiku | sonnet | opus
+    effort: str | None = (
+        None  # low | medium | high | xhigh | max (haiku: игнорируется, opus: <= medium)
+    )
 
 
 @app.get("/api/devices")
@@ -73,6 +77,8 @@ def start(req: StartRequest) -> dict:
                 "language": req.language,
                 "answer_mic": req.answer_mic,
                 "register_ask": _register_ask,
+                "answer_model": req.answer_model,
+                "effort": req.effort,
             },
             daemon=True,
         )

@@ -61,6 +61,12 @@
     <option value="ru">язык: русский</option>
     <option value="en">язык: английский</option>
   </select>
+  <select id="answerModel" title="Модель для ответов">
+    <option value="haiku" selected>ответы: haiku</option>
+    <option value="sonnet">ответы: sonnet</option>
+    <option value="opus">ответы: opus</option>
+  </select>
+  <select id="effort" title="Effort (haiku не поддерживает, opus не выше medium)"></select>
   <select id="mic" title="Микрофон"></select>
   <select id="loopback" title="Звук системы (loopback)"></select>
   <label title="Отладка: обычно вопросы приходят только из звука встречи">
@@ -77,6 +83,21 @@
 <script>
 const $ = id => document.getElementById(id);
 const answerCards = {};
+
+const EFFORTS = { haiku: [], sonnet: ["low", "medium", "high", "xhigh", "max"], opus: ["low", "medium"] };
+function fillEffort() {
+  const model = $("answerModel").value;
+  const sel = $("effort");
+  const prev = sel.value;
+  sel.innerHTML = "";
+  const levels = EFFORTS[model];
+  if (!levels.length) { sel.add(new Option("effort: —", "")); sel.disabled = true; return; }
+  sel.disabled = false;
+  sel.add(new Option("effort: по умолч.", ""));
+  for (const l of levels) sel.add(new Option(`effort: ${l}`, l, l === prev, l === prev));
+}
+$("answerModel").onchange = fillEffort;
+fillEffort();
 
 $("mode").onchange = () => {
   const isFile = $("mode").value === "file";
@@ -105,6 +126,8 @@ $("start").onclick = async () => {
     loopback_device: $("loopback").value ? +$("loopback").value : null,
     language: $("lang").value || null,
     answer_mic: $("answerMic").checked,
+    answer_model: $("answerModel").value,
+    effort: $("effort").value || null,
   };
   const r = await (await fetch("/api/start", { method: "POST",
     headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();

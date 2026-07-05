@@ -87,9 +87,24 @@ def _fuzzy_question_word(word: str) -> bool:
     return any(difflib.SequenceMatcher(None, word, q).ratio() >= 0.72 for q in FUZZY_QUESTION_WORDS)
 
 
+EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
+
+def resolve_effort(model: str, effort: str | None) -> str | None:
+    """Effort с ограничениями: haiku не поддерживает effort вовсе, opus капнут на medium."""
+    if effort is None or effort not in EFFORT_LEVELS or model == "haiku":
+        return None
+    if model == "opus" and EFFORT_LEVELS.index(effort) > EFFORT_LEVELS.index("medium"):
+        return "medium"
+    return effort
+
+
 class Answerer:
-    def __init__(self, model: str = "haiku", answer_mic: bool = False) -> None:
+    def __init__(
+        self, model: str = "haiku", answer_mic: bool = False, effort: str | None = None
+    ) -> None:
         self.model = model
+        self.effort = resolve_effort(model, effort)
         self.answer_mic = answer_mic  # отладка: реагировать и на вопросы с микрофона
         self.history: deque[Utterance] = deque()
         self._proc: subprocess.Popen | None = None
@@ -143,6 +158,8 @@ class Answerer:
             "--max-turns",
             "1",  # только текстовый ответ, без инструментов
         ]
+        if self.effort is not None:
+            cmd += ["--effort", self.effort]
         if exe.lower().endswith((".cmd", ".bat")):  # npm-шим нельзя запустить без cmd.exe
             cmd = ["cmd", "/c", *cmd]
         proc = subprocess.Popen(

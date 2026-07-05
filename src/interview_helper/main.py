@@ -21,6 +21,17 @@ def main() -> None:
     parser.add_argument(
         "--answer-mic", action="store_true", help="отвечать и на вопросы с микрофона (отладка)"
     )
+    parser.add_argument(
+        "--answer-model",
+        default="haiku",
+        choices=["haiku", "sonnet", "opus"],
+        help="модель для ответов",
+    )
+    parser.add_argument(
+        "--effort",
+        choices=["low", "medium", "high", "xhigh", "max"],
+        help="effort ответов (haiku: не поддерживается, opus: не выше medium)",
+    )
     args = parser.parse_args()
 
     if args.list_devices:
@@ -64,6 +75,8 @@ def main() -> None:
             loopback_device=args.loopback_device,
             language=args.language,
             answer_mic=args.answer_mic,
+            answer_model=args.answer_model,
+            effort=args.effort,
         )
     except KeyboardInterrupt:
         stop.set()
