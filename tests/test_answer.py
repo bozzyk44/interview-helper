@@ -1,6 +1,6 @@
 import time
 
-from interview_helper.answer import Answerer, extract_text
+from interview_helper.answer import Answerer, extract_delta
 from interview_helper.transcribe import Utterance
 
 
@@ -8,14 +8,18 @@ def _utt(text: str, source: str = "loopback") -> Utterance:
     return Utterance(source, text, time.time())
 
 
-def test_extract_text_assistant_event():
-    line = '{"type":"assistant","message":{"content":[{"type":"text","text":"привет"}]}}'
-    assert extract_text(line) == "привет"
+def test_extract_delta():
+    line = (
+        '{"type":"stream_event","event":{"type":"content_block_delta",'
+        '"delta":{"type":"text_delta","text":"привет"}}}'
+    )
+    assert extract_delta(line) == "привет"
 
 
-def test_extract_text_ignores_other_events_and_garbage():
-    assert extract_text('{"type":"system"}') == ""
-    assert extract_text("not json") == ""
+def test_extract_delta_ignores_other_events_and_garbage():
+    assert extract_delta('{"type":"system"}') == ""
+    assert extract_delta('{"type":"assistant","message":{"content":[]}}') == ""
+    assert extract_delta("not json") == ""
 
 
 def test_is_question_heuristics():

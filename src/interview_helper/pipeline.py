@@ -70,16 +70,27 @@ def _run(
         )
         emit({"type": "status", "text": "Слушаю встречу и микрофон"})
 
+    answer_seq = 0
+
+    def answer_worker(utt, aid: int) -> None:
+        emit({"type": "answer_start", "id": aid, "question": utt.text})
+        for delta in answerer.stream_answer(utt):
+            if stop.is_set():
+                answerer.cancel()
+                break
+            emit({"type": "answer_delta", "id": aid, "text": delta})
+        emit({"type": "answer_end", "id": aid})
+
     def handle(utt) -> None:
         emit({"type": "utterance", "source": utt.source, "text": utt.text})
         answerer.add(utt)
         if answerer.is_question(utt):
-            emit({"type": "answer_start", "question": utt.text})
-            for delta in answerer.stream_answer(utt):
-                if stop.is_set():
-                    break
-                emit({"type": "answer_delta", "text": delta})
-            emit({"type": "answer_end"})
+            # ответ стримится в фоне, чтобы не блокировать транскрипцию;
+            # новый вопрос вытесняет недописанный ответ на предыдущий
+            answerer.cancel()
+            nonlocal answer_seq
+            answer_seq += 1
+            threading.Thread(target=answer_worker, args=(utt, answer_seq), daemon=True).start()
 
     try:
         idle = 0

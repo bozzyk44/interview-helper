@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from collections import deque
 from collections.abc import Iterator
+from pathlib import Path
 
 from .transcribe import Utterance
 
@@ -17,7 +19,6 @@ SYSTEM_PROMPT = (
 )
 
 CONTEXT_CHARS = 6000  # ~2000 токенов скользящего окна
-
 
 # вопрос распознаём, если одно из этих слов встретилось в начале реплики
 QUESTION_WORDS = (
@@ -64,6 +65,7 @@ class Answerer:
         self.model = model
         self.answer_mic = answer_mic  # отладка: реагировать и на вопросы с микрофона
         self.history: deque[Utterance] = deque()
+        self._proc: subprocess.Popen | None = None
 
     def add(self, utt: Utterance) -> None:
         self.history.append(utt)
@@ -80,49 +82,76 @@ class Answerer:
         head = text.replace(",", " ").split()[:5]
         return any(word.startswith(q) for word in head for q in QUESTION_WORDS)
 
+    def cancel(self) -> None:
+        """Прерывает текущий ответ (новый вопрос вытесняет старый)."""
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+
     def stream_answer(self, question: Utterance) -> Iterator[str]:
         """Стримит текст ответа по мере генерации."""
+        exe = shutil.which("claude")
+        if exe is None:
+            yield "[claude CLI не найден в PATH]"
+            return
         transcript = "\n".join(
             f"[{'interviewer' if u.source == 'loopback' else 'me'}] {u.text}" for u in self.history
         )
-        prompt = f"Транскрипт:\n{transcript}\n\nВопрос интервьюера: {question.text}"
+        # системная инструкция и промпт уходят через stdin: никакого квотинга аргументов
+        prompt = (
+            f"{SYSTEM_PROMPT}\n\nТранскрипт:\n{transcript}\n\nВопрос интервьюера: {question.text}"
+        )
+        cmd = [
+            "claude",
+            "-p",
+            "--model",
+            self.model,
+            "--output-format",
+            "stream-json",
+            "--include-partial-messages",
+            "--verbose",
+            "--strict-mcp-config",  # не ждать внешних MCP-серверов
+            "--max-turns",
+            "1",  # только текстовый ответ, без инструментов
+        ]
+        if exe.lower().endswith((".cmd", ".bat")):  # npm-шим нельзя запустить без cmd.exe
+            cmd = ["cmd", "/c", *cmd]
         proc = subprocess.Popen(
-            [
-                "claude",
-                "-p",
-                prompt,
-                "--model",
-                self.model,
-                "--system-prompt",
-                SYSTEM_PROMPT,
-                "--output-format",
-                "stream-json",
-                "--verbose",
-            ],
+            cmd,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
-            shell=True,  # claude — это .cmd-шим на Windows
+            # нейтральный cwd: иначе headless подхватит CLAUDE.md и хуки этого репо
+            cwd=Path.home(),
         )
-        assert proc.stdout is not None
+        self._proc = proc
+        assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
+        proc.stdin.write(prompt)
+        proc.stdin.close()
+        got_delta = False
         for line in proc.stdout:
-            text = extract_text(line)
-            if text:
-                yield text
-        proc.wait()
+            delta = extract_delta(line)
+            if delta:
+                got_delta = True
+                yield delta
+        code = proc.wait()
+        if code != 0 and not got_delta and self._proc is proc:  # kill() при отмене — не ошибка
+            err = proc.stderr.read().strip()
+            yield f"[claude завершился с кодом {code}: {err[-500:] or 'нет stderr'}]"
 
 
-def extract_text(line: str) -> str:
-    """Достаёт текстовые дельты из stream-json строки; пустая строка, если их нет."""
+def extract_delta(line: str) -> str:
+    """Текстовая дельта из события stream-json; пустая строка, если её нет."""
     try:
         event = json.loads(line)
     except json.JSONDecodeError:
         return ""
-    if event.get("type") == "assistant":
-        return "".join(
-            block.get("text", "")
-            for block in event.get("message", {}).get("content", [])
-            if block.get("type") == "text"
-        )
-    return ""
+    if event.get("type") != "stream_event":
+        return ""
+    inner = event.get("event", {})
+    if inner.get("type") != "content_block_delta":
+        return ""
+    delta = inner.get("delta", {})
+    return delta.get("text", "") if delta.get("type") == "text_delta" else ""

@@ -71,7 +71,7 @@
 </main>
 <script>
 const $ = id => document.getElementById(id);
-let currentAnswer = null;
+const answerCards = {};
 
 $("mode").onchange = () => {
   const isFile = $("mode").value === "file";
@@ -124,16 +124,17 @@ new EventSource("/api/events").onmessage = e => {
     d.append(ev.text);
     $("transcript").append(d); scrollDown($("transcript"));
   } else if (ev.type === "answer_start") {
-    currentAnswer = document.createElement("div");
-    currentAnswer.className = "answer streaming";
+    const card = document.createElement("div");
+    card.className = "answer streaming";
     const q = document.createElement("div"); q.className = "q"; q.textContent = ev.question;
     const t = document.createElement("div"); t.className = "t";
-    currentAnswer.append(q, t);
-    $("answers").append(currentAnswer); scrollDown($("answers"));
-  } else if (ev.type === "answer_delta" && currentAnswer) {
-    currentAnswer.querySelector(".t").append(ev.text); scrollDown($("answers"));
-  } else if (ev.type === "answer_end" && currentAnswer) {
-    currentAnswer.classList.remove("streaming"); currentAnswer = null;
+    card.append(q, t);
+    answerCards[ev.id] = card;
+    $("answers").append(card); scrollDown($("answers"));
+  } else if (ev.type === "answer_delta" && answerCards[ev.id]) {
+    answerCards[ev.id].querySelector(".t").append(ev.text); scrollDown($("answers"));
+  } else if (ev.type === "answer_end" && answerCards[ev.id]) {
+    answerCards[ev.id].classList.remove("streaming"); delete answerCards[ev.id];
   }
 };
 </script>
