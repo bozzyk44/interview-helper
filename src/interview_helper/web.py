@@ -22,6 +22,7 @@ _lock = threading.Lock()
 _stop: threading.Event | None = None
 _thread: threading.Thread | None = None
 _subscribers: list[queue.Queue[dict]] = []
+_ask = None  # force-ask текущей сессии, выставляется пайплайном
 
 
 def _emit(event: dict) -> None:
@@ -71,10 +72,29 @@ def start(req: StartRequest) -> dict:
                 "loopback_device": req.loopback_device,
                 "language": req.language,
                 "answer_mic": req.answer_mic,
+                "register_ask": _register_ask,
             },
             daemon=True,
         )
         _thread.start()
+    return {"ok": True}
+
+
+def _register_ask(fn) -> None:
+    global _ask
+    _ask = fn
+
+
+class AskRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/ask")
+def ask(req: AskRequest) -> dict:
+    """Force-LLM: отправить реплику на ответ вручную, минуя детекцию вопроса."""
+    if _ask is None or _thread is None or not _thread.is_alive():
+        return {"ok": False, "error": "Сессия не запущена"}
+    _ask(req.text)
     return {"ok": True}
 
 

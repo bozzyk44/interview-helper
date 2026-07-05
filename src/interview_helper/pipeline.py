@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 from .answer import Answerer
 from .capture import AudioChunk, start_file_capture, start_live_capture
-from .transcribe import Transcriber
+from .transcribe import Transcriber, Utterance
 
 Emit = Callable[[dict], None]
 
@@ -26,6 +26,7 @@ def run_pipeline(
     loopback_device: int | None = None,
     language: str | None = None,
     answer_mic: bool = False,
+    register_ask: Callable[[Callable[[str], None]], None] | None = None,
 ) -> None:
     chunks: queue.Queue[AudioChunk] = queue.Queue()
     try:
@@ -39,6 +40,7 @@ def run_pipeline(
             loopback_device,
             language,
             answer_mic,
+            register_ask,
         )
     except Exception as e:  # noqa: BLE001 — поток фоновый, ошибку показываем пользователю
         emit({"type": "status", "text": f"Ошибка: {e!r}"})
@@ -56,6 +58,7 @@ def _run(
     loopback_device: int | None,
     language: str | None,
     answer_mic: bool,
+    register_ask: Callable[[Callable[[str], None]], None] | None = None,
 ) -> None:
     emit({"type": "status", "text": f"Загружаю whisper ({model_size})..."})
     transcriber = Transcriber(model_size=model_size, language=language)
@@ -82,16 +85,25 @@ def _run(
             emit({"type": "answer_delta", "id": aid, "text": delta})
         emit({"type": "answer_end", "id": aid})
 
+    def ask(utt) -> None:
+        # ответ стримится в фоне, чтобы не блокировать транскрипцию;
+        # новый вопрос вытесняет недописанный ответ на предыдущий
+        answerer.cancel()
+        nonlocal answer_seq
+        answer_seq += 1
+        threading.Thread(target=answer_worker, args=(utt, answer_seq), daemon=True).start()
+
     def handle(utt) -> None:
         emit({"type": "utterance", "source": utt.source, "text": utt.text})
         answerer.add(utt)
         if answerer.is_question(utt):
-            # ответ стримится в фоне, чтобы не блокировать транскрипцию;
-            # новый вопрос вытесняет недописанный ответ на предыдущий
-            answerer.cancel()
-            nonlocal answer_seq
-            answer_seq += 1
-            threading.Thread(target=answer_worker, args=(utt, answer_seq), daemon=True).start()
+            ask(utt)
+
+    if register_ask is not None:
+        # force-ask из UI: реплика уже в history, только запускаем ответ
+        import time as _time
+
+        register_ask(lambda text: ask(Utterance("loopback", text, _time.time())))
 
     try:
         idle = 0
