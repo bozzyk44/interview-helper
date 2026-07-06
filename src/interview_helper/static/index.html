@@ -62,8 +62,8 @@
     <option value="en">язык: английский</option>
   </select>
   <select id="answerModel" title="Модель для ответов">
-    <option value="haiku" selected>ответы: haiku</option>
-    <option value="sonnet">ответы: sonnet</option>
+    <option value="haiku">ответы: haiku</option>
+    <option value="sonnet" selected>ответы: sonnet</option>
     <option value="opus">ответы: opus</option>
   </select>
   <select id="effort" title="Effort (haiku не поддерживает, opus не выше medium)"></select>
@@ -94,7 +94,8 @@ function fillEffort() {
   if (!levels.length) { sel.add(new Option("effort: —", "")); sel.disabled = true; return; }
   sel.disabled = false;
   sel.add(new Option("effort: по умолч.", ""));
-  for (const l of levels) sel.add(new Option(`effort: ${l}`, l, l === prev, l === prev));
+  const want = levels.includes(prev) ? prev : "low"; // sonnet-low — фаворит по скорость/качество
+  for (const l of levels) sel.add(new Option(`effort: ${l}`, l, l === want, l === want));
 }
 $("answerModel").onchange = fillEffort;
 fillEffort();

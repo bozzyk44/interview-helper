@@ -9,6 +9,7 @@ dist/
 context/
 sessions/
 profile.md
+tests/fixtures/*.wav
 
 # локальные настройки Claude Code
 .claude/settings.local.json

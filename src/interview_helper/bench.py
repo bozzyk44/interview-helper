@@ -33,7 +33,7 @@ def main() -> None:
     t_asr = time.perf_counter() - t0
 
     utt = Utterance("loopback", text, time.time())
-    answerer = Answerer()
+    answerer = Answerer(model="sonnet", effort="low")  # дефолт пайплайна
     answerer.add(utt)
 
     t0 = time.perf_counter()

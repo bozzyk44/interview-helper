@@ -121,7 +121,9 @@ class Answerer:
         text = utt.text.lower()
         if "?" in text:
             return True
-        head = text.replace(",", " ").replace(".", " ").split()[:5]
+        head = text.replace(",", " ").replace(".", " ").split()[:6]
+        if "ли" in head:  # косвенный вопрос без интонации: «интересно, сработает ли...»
+            return True
         if any(word.startswith(q) for word in head for q in QUESTION_WORDS):
             return True
         return any(_fuzzy_question_word(word) for word in head)

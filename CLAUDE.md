@@ -21,7 +21,7 @@ uv run python -m interview_helper.bench <wav>      # бенчмарк латен
 
 Живой запуск (`main` без `--input-file`) включает захват микрофона — его запускает пользователь, не Claude (страхует хук guard_run).
 
-Код лежит в `src/interview_helper/`: `capture.py` (аудио: callback-режим PyAudio — блокирующий read нельзя, WASAPI loopback при тишине не отдаёт кадров и вешает/роняет процесс; устройства — только WASAPI host API) → `transcribe.py` (whisper) → `answer.py` (детекция вопроса + `claude -p`) → `pipeline.py` (общий цикл с колбэком событий). Поверх пайплайна два фронтенда: `main.py` (терминал, rich) и `web.py` + `static/index.html` (FastAPI + SSE, порт 8765). Оценка ресурсов whisper — в `docs/resources.md`.
+Код лежит в `src/interview_helper/`: `capture.py` (аудио: callback-режим PyAudio — блокирующий read нельзя, WASAPI loopback при тишине не отдаёт кадров и вешает/роняет процесс; устройства — только WASAPI host API) → `transcribe.py` (whisper) → `answer.py` (детекция вопроса + `claude -p`) → `pipeline.py` (общий цикл с колбэком событий). Транскрипт и ответы каждой сессии пишутся в `sessions/<время>.md` (`session_log.py`) — это вход для отчётов Фазы 1. Дефолт ответов — sonnet + effort low (haiku слабее держит контекст, medium+ слишком многословен для реального времени). Первые реплики после старта транскрибируются медленно — прогрев whisper; это ожидаемо. Поверх пайплайна два фронтенда: `main.py` (терминал, rich) и `web.py` + `static/index.html` (FastAPI + SSE, порт 8765). Оценка ресурсов whisper — в `docs/resources.md`.
 
 ## Стек
 

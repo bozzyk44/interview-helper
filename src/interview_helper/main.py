@@ -23,12 +23,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--answer-model",
-        default="haiku",
+        default="sonnet",
         choices=["haiku", "sonnet", "opus"],
         help="модель для ответов",
     )
     parser.add_argument(
         "--effort",
+        default="low",
         choices=["low", "medium", "high", "xhigh", "max"],
         help="effort ответов (haiku: не поддерживается, opus: не выше medium)",
     )

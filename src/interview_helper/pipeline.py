@@ -66,15 +66,18 @@ def _run(
     answer_model: str = "haiku",
     effort: str | None = None,
 ) -> None:
+    from .session_log import SessionLog
+
     emit({"type": "status", "text": f"Загружаю whisper ({model_size})..."})
     transcriber = Transcriber(model_size=model_size, language=language)
     answerer = Answerer(model=answer_model, answer_mic=answer_mic, effort=effort)
+    log = SessionLog(answer_model, answerer.effort)
     effort_note = f", effort {answerer.effort}" if answerer.effort else ""
     emit(
         {
             "type": "status",
             "text": f"whisper {model_size} на {transcriber.device}, "
-            f"ответы: {answer_model}{effort_note}",
+            f"ответы: {answer_model}{effort_note}, лог: {log.path}",
         }
     )
 
@@ -91,12 +94,16 @@ def _run(
 
     def answer_worker(utt, aid: int) -> None:
         emit({"type": "answer_start", "id": aid, "question": utt.text})
+        parts = []
         for delta in answerer.stream_answer(utt):
             if stop.is_set():
                 answerer.cancel()
                 break
+            parts.append(delta)
             emit({"type": "answer_delta", "id": aid, "text": delta})
         emit({"type": "answer_end", "id": aid})
+        if parts:
+            log.answer(utt.text, "".join(parts))
 
     def ask(utt) -> None:
         # ответ стримится в фоне, чтобы не блокировать транскрипцию;
@@ -108,6 +115,7 @@ def _run(
 
     def handle(utt) -> None:
         emit({"type": "utterance", "source": utt.source, "text": utt.text})
+        log.utterance(utt)
         answerer.add(utt)
         if answerer.is_question(utt):
             ask(utt)
@@ -137,3 +145,4 @@ def _run(
                 handle(utt)
     finally:
         capture_stop.set()
+        log.close()

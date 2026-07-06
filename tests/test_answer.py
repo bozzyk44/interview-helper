@@ -29,6 +29,8 @@ def test_is_question_heuristics():
     assert a.is_question(_utt("Подскажите, какие бывают статусы ошибок HTTP"))
     assert a.is_question(_utt("Объясните разницу между списком и кортежем"))
     assert not a.is_question(_utt("Отлично, идём дальше."))
+    # косвенный вопрос без «?» — частица «ли»
+    assert a.is_question(_utt("Интересно, сработает ли переключение модели на лету."))
     # whisper коверкает первое слово — ловим fuzzy-сопоставлением
     assert a.is_question(_utt("Весните разницу между авторизацией и аутентификацией."))
     assert a.is_question(_utt("Весните про кэширование в веб-приложениях."))
