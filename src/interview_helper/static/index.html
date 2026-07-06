@@ -32,6 +32,10 @@
                            font: 13px/1.4 ui-monospace, monospace; resize: vertical; }
   #vacancyModal .row { display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
   #vacancyModal .hint { margin-right: auto; color: #8a919e; font-size: 12px; }
+  #vacancyModal .tabs { display: flex; gap: 6px; }
+  #vacancyModal .tab { background: transparent; border: 1px solid #3a3f4b; color: #8a919e;
+                       border-radius: 8px; padding: 5px 14px; font-weight: 600; }
+  #vacancyModal .tab.active { background: #14161a; color: #e6e6e6; border-color: #4a6da7; }
   #vacancySave { background: #2f9e5f; color: #fff; }
   #vacancyClose { background: #2b2f38; color: #e6e6e6; }
   .answer.report-card { border-color: #6b5b95; background: #221e2e; }
@@ -92,15 +96,18 @@
   <button id="start">Старт</button>
   <button id="stop" disabled>Стоп</button>
   <button id="report" title="Отчёт по последней сессии">Отчёт</button>
-  <button id="vacancy" title="Описание вакансии для контекста ответов">Вакансия</button>
+  <button id="vacancy" title="Вакансия и резюме для контекста ответов">Контекст</button>
   <span id="status">не запущено</span>
 </header>
 <div id="vacancyModal">
   <div class="box">
-    <strong>Описание вакансии</strong>
-    <textarea id="vacancyText" placeholder="Вставьте текст вакансии (markdown или обычный текст). Пустой текст удаляет вакансию."></textarea>
+    <div class="tabs">
+      <button class="tab active" data-tab="vacancy">Вакансия</button>
+      <button class="tab" data-tab="resume">Резюме</button>
+    </div>
+    <textarea id="vacancyText" placeholder="Вставьте текст (markdown или обычный). Пустой текст удаляет файл."></textarea>
     <div class="row">
-      <span class="hint">Сохраняется в context/vacancy.md; подхватывается при следующем старте сессии.</span>
+      <span class="hint">Сохраняется в context/; подхватывается при следующем старте сессии.</span>
       <button id="vacancyClose">Отмена</button>
       <button id="vacancySave">Сохранить</button>
     </div>
@@ -168,27 +175,42 @@ $("start").onclick = async () => {
 
 $("stop").onclick = async () => { await fetch("/api/stop", { method: "POST" }); };
 
-async function refreshVacancyBadge() {
-  const r = await (await fetch("/api/vacancy")).json();
-  $("vacancy").classList.toggle("loaded", !!r.text.trim());
-  $("vacancy").textContent = r.text.trim() ? "Вакансия ✓" : "Вакансия";
-  return r.text;
+const ctxState = { vacancy: "", resume: "" };
+let ctxTab = "vacancy";
+
+async function refreshContextBadge() {
+  const r = await (await fetch("/api/context")).json();
+  ctxState.vacancy = r.vacancy; ctxState.resume = r.resume;
+  const loaded = [r.vacancy.trim() && "вакансия", r.resume.trim() && "резюме"].filter(Boolean);
+  $("vacancy").classList.toggle("loaded", loaded.length > 0);
+  $("vacancy").textContent = loaded.length ? `Контекст: ${loaded.join(" + ")}` : "Контекст";
 }
-refreshVacancyBadge();
+refreshContextBadge();
+
+function switchTab(tab) {
+  ctxState[ctxTab] = $("vacancyText").value;
+  ctxTab = tab;
+  document.querySelectorAll("#vacancyModal .tab").forEach(
+    b => b.classList.toggle("active", b.dataset.tab === tab));
+  $("vacancyText").value = ctxState[tab];
+  $("vacancyText").focus();
+}
+document.querySelectorAll("#vacancyModal .tab").forEach(b => b.onclick = () => switchTab(b.dataset.tab));
 
 $("vacancy").onclick = async () => {
-  $("vacancyText").value = await refreshVacancyBadge();
+  await refreshContextBadge();
+  $("vacancyText").value = ctxState[ctxTab];
   $("vacancyModal").classList.add("open");
   $("vacancyText").focus();
 };
 $("vacancyClose").onclick = () => $("vacancyModal").classList.remove("open");
 $("vacancySave").onclick = async () => {
-  await fetch("/api/vacancy", { method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text: $("vacancyText").value }) });
+  ctxState[ctxTab] = $("vacancyText").value;
+  await fetch("/api/context", { method: "POST",
+    headers: { "Content-Type": "application/json" }, body: JSON.stringify(ctxState) });
   $("vacancyModal").classList.remove("open");
-  await refreshVacancyBadge();
-  $("status").textContent = "Вакансия сохранена — подхватится при следующем старте сессии";
+  await refreshContextBadge();
+  $("status").textContent = "Контекст сохранён — подхватится при следующем старте сессии";
 };
 
 let reportCard = null;

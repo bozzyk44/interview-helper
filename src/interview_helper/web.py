@@ -104,26 +104,36 @@ def ask(req: AskRequest) -> dict:
     return {"ok": True}
 
 
-class VacancyRequest(BaseModel):
-    text: str
+_CONTEXT_FILES = {"vacancy": "vacancy.md", "resume": "resume.md"}
 
 
-@app.get("/api/vacancy")
-def get_vacancy() -> dict:
-    path = Path("context") / "vacancy.md"
-    text = path.read_text(encoding="utf-8") if path.exists() else ""
-    return {"text": text}
+class ContextRequest(BaseModel):
+    vacancy: str = ""
+    resume: str = ""
 
 
-@app.post("/api/vacancy")
-def set_vacancy(req: VacancyRequest) -> dict:
-    path = Path("context") / "vacancy.md"
-    path.parent.mkdir(exist_ok=True)
-    if req.text.strip():
-        path.write_text(req.text, encoding="utf-8")
-        return {"ok": True, "saved": str(path)}
-    path.unlink(missing_ok=True)  # пустой текст = убрать вакансию
-    return {"ok": True, "saved": None}
+@app.get("/api/context")
+def get_context() -> dict:
+    result = {}
+    for name, filename in _CONTEXT_FILES.items():
+        path = Path("context") / filename
+        result[name] = path.read_text(encoding="utf-8") if path.exists() else ""
+    return result
+
+
+@app.post("/api/context")
+def set_context(req: ContextRequest) -> dict:
+    Path("context").mkdir(exist_ok=True)
+    saved = []
+    for name, filename in _CONTEXT_FILES.items():
+        text = getattr(req, name)
+        path = Path("context") / filename
+        if text.strip():
+            path.write_text(text, encoding="utf-8")
+            saved.append(filename)
+        else:
+            path.unlink(missing_ok=True)  # пустой текст = убрать файл
+    return {"ok": True, "saved": saved}
 
 
 _report_thread: threading.Thread | None = None
