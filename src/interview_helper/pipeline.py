@@ -73,11 +73,16 @@ def _run(
     answerer = Answerer(model=answer_model, answer_mic=answer_mic, effort=effort)
     log = SessionLog(answer_model, answerer.effort)
     effort_note = f", effort {answerer.effort}" if answerer.effort else ""
+    ctx_note = (
+        f", контекст: {', '.join(answerer.context_names)}"
+        if answerer.context_names
+        else ", контекст: нет (context/vacancy.md, context/resume.md)"
+    )
     emit(
         {
             "type": "status",
             "text": f"whisper {model_size} на {transcriber.device}, "
-            f"ответы: {answer_model}{effort_note}, лог: {log.path}",
+            f"ответы: {answer_model}{effort_note}{ctx_note}, лог: {log.path}",
         }
     )
 

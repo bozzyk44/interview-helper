@@ -18,10 +18,30 @@ SYSTEM_PROMPT = (
     "Ответь от первого лица кандидата, без преамбул. Структура: 1-2 предложения сути, "
     "затем маркированный список ключевых пунктов с конкретикой (термины, цифры, названия), "
     "и короткий пример из практики, если уместен. Не растекайся, но не жертвуй "
-    "содержанием ради краткости. Отвечай на языке вопроса."
+    "содержанием ради краткости. Отвечай на языке вопроса. Если ниже даны разделы "
+    "«Вакансия» и «Резюме кандидата» — отвечай в их контексте: делай акценты на "
+    "требованиях вакансии и опирайся на реальный опыт из резюме, не выдумывая новый."
 )
 
 CONTEXT_CHARS = 6000  # ~2000 токенов скользящего окна
+
+CONTEXT_DIR = Path("context")
+CONTEXT_FILES = (("vacancy.md", "Вакансия"), ("resume.md", "Резюме кандидата"))
+CONTEXT_FILE_CHARS = 8000  # ~2500 токенов на файл, чтобы не раздувать промпт
+
+
+def load_context() -> tuple[str, list[str]]:
+    """Контекст сессии из context/: текст для промпта и имена найденных файлов."""
+    parts, names = [], []
+    for filename, label in CONTEXT_FILES:
+        path = CONTEXT_DIR / filename
+        if path.exists():
+            text = path.read_text(encoding="utf-8").strip()
+            if text:
+                parts.append(f"## {label}\n{text[:CONTEXT_FILE_CHARS]}")
+                names.append(filename)
+    return "\n\n".join(parts), names
+
 
 # вопрос распознаём, если одно из этих слов встретилось в начале реплики
 QUESTION_WORDS = (
@@ -106,6 +126,7 @@ class Answerer:
         self.model = model
         self.effort = resolve_effort(model, effort)
         self.answer_mic = answer_mic  # отладка: реагировать и на вопросы с микрофона
+        self.context, self.context_names = load_context()
         self.history: deque[Utterance] = deque()
         self._proc: subprocess.Popen | None = None
 
@@ -144,8 +165,10 @@ class Answerer:
             f"[{'interviewer' if u.source == 'loopback' else 'me'}] {u.text}" for u in self.history
         )
         # системная инструкция и промпт уходят через stdin: никакого квотинга аргументов
+        context_block = f"\n\n{self.context}" if self.context else ""
         prompt = (
-            f"{SYSTEM_PROMPT}\n\nТранскрипт:\n{transcript}\n\nВопрос интервьюера: {question.text}"
+            f"{SYSTEM_PROMPT}{context_block}\n\n"
+            f"Транскрипт:\n{transcript}\n\nВопрос интервьюера: {question.text}"
         )
         cmd = [
             "claude",

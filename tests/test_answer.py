@@ -54,6 +54,20 @@ def test_resolve_effort():
     assert resolve_effort("sonnet", "bogus") is None
 
 
+def test_load_context(tmp_path, monkeypatch):
+    from interview_helper.answer import load_context
+
+    monkeypatch.chdir(tmp_path)
+    text, names = load_context()
+    assert text == "" and names == []
+
+    (tmp_path / "context").mkdir()
+    (tmp_path / "context" / "vacancy.md").write_text("Senior Python Developer", encoding="utf-8")
+    text, names = load_context()
+    assert "Senior Python Developer" in text and "## Вакансия" in text
+    assert names == ["vacancy.md"]
+
+
 def test_history_window_trims():
     a = Answerer()
     for _ in range(50):
