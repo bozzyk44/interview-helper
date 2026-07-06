@@ -7,7 +7,7 @@ import json
 import shutil
 import subprocess
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from .transcribe import Utterance
@@ -157,60 +157,83 @@ class Answerer:
 
     def stream_answer(self, question: Utterance) -> Iterator[str]:
         """Стримит текст ответа по мере генерации."""
-        exe = shutil.which("claude")
-        if exe is None:
-            yield "[claude CLI не найден в PATH]"
-            return
         transcript = "\n".join(
             f"[{'interviewer' if u.source == 'loopback' else 'me'}] {u.text}" for u in self.history
         )
-        # системная инструкция и промпт уходят через stdin: никакого квотинга аргументов
         context_block = f"\n\n{self.context}" if self.context else ""
         prompt = (
             f"{SYSTEM_PROMPT}{context_block}\n\n"
             f"Транскрипт:\n{transcript}\n\nВопрос интервьюера: {question.text}"
         )
-        cmd = [
-            "claude",
-            "-p",
-            "--model",
+
+        def hold(proc: subprocess.Popen) -> None:
+            self._proc = proc
+
+        yield from stream_claude(
+            prompt,
             self.model,
-            "--output-format",
-            "stream-json",
-            "--include-partial-messages",
-            "--verbose",
-            "--strict-mcp-config",  # не ждать внешних MCP-серверов
-            "--max-turns",
-            "1",  # только текстовый ответ, без инструментов
-        ]
-        if self.effort is not None:
-            cmd += ["--effort", self.effort]
-        if exe.lower().endswith((".cmd", ".bat")):  # npm-шим нельзя запустить без cmd.exe
-            cmd = ["cmd", "/c", *cmd]
-        proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            # нейтральный cwd: иначе headless подхватит CLAUDE.md и хуки этого репо
-            cwd=Path.home(),
+            self.effort,
+            on_proc=hold,
+            was_cancelled=lambda p: self._proc is not p,
         )
-        self._proc = proc
-        assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
-        proc.stdin.write(prompt)
-        proc.stdin.close()
-        got_delta = False
-        for line in proc.stdout:
-            delta = extract_delta(line)
-            if delta:
-                got_delta = True
-                yield delta
-        code = proc.wait()
-        if code != 0 and not got_delta and self._proc is proc:  # kill() при отмене — не ошибка
-            err = proc.stderr.read().strip()
-            yield f"[claude завершился с кодом {code}: {err[-500:] or 'нет stderr'}]"
+
+
+def stream_claude(
+    prompt: str,
+    model: str,
+    effort: str | None = None,
+    on_proc: Callable[[subprocess.Popen], None] | None = None,
+    was_cancelled: Callable[[subprocess.Popen], bool] | None = None,
+) -> Iterator[str]:
+    """Одноразовый headless-вызов claude -p со стримингом текстовых дельт."""
+    exe = shutil.which("claude")
+    if exe is None:
+        yield "[claude CLI не найден в PATH]"
+        return
+    cmd = [
+        "claude",
+        "-p",
+        "--model",
+        model,
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--verbose",
+        "--strict-mcp-config",  # не ждать внешних MCP-серверов
+        "--max-turns",
+        "1",  # только текстовый ответ, без инструментов
+    ]
+    if effort is not None:
+        cmd += ["--effort", effort]
+    if exe.lower().endswith((".cmd", ".bat")):  # npm-шим нельзя запустить без cmd.exe
+        cmd = ["cmd", "/c", *cmd]
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        # нейтральный cwd: иначе headless подхватит CLAUDE.md и хуки этого репо
+        cwd=Path.home(),
+    )
+    if on_proc is not None:
+        on_proc(proc)
+    assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
+    # промпт через stdin: никакого квотинга аргументов Windows
+    proc.stdin.write(prompt)
+    proc.stdin.close()
+    got_delta = False
+    for line in proc.stdout:
+        delta = extract_delta(line)
+        if delta:
+            got_delta = True
+            yield delta
+    code = proc.wait()
+    cancelled = was_cancelled(proc) if was_cancelled is not None else False
+    if code != 0 and not got_delta and not cancelled:  # kill() при отмене — не ошибка
+        err = proc.stderr.read().strip()
+        yield f"[claude завершился с кодом {code}: {err[-500:] or 'нет stderr'}]"
 
 
 def extract_delta(line: str) -> str:

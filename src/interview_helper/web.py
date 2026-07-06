@@ -104,6 +104,36 @@ def ask(req: AskRequest) -> dict:
     return {"ok": True}
 
 
+_report_thread: threading.Thread | None = None
+
+
+@app.post("/api/report")
+def report() -> dict:
+    """Сгенерировать отчёт по последнему транскрипту из sessions/."""
+    global _report_thread
+    from .report import latest_transcript, report_path_for, stream_report
+
+    if _report_thread is not None and _report_thread.is_alive():
+        return {"ok": False, "error": "Отчёт уже генерируется"}
+    transcript = latest_transcript()
+    if transcript is None:
+        return {"ok": False, "error": "В sessions/ нет транскриптов"}
+
+    def worker() -> None:
+        _emit({"type": "report_start", "transcript": str(transcript)})
+        parts = []
+        for delta in stream_report(transcript):
+            parts.append(delta)
+            _emit({"type": "report_delta", "text": delta})
+        out = report_path_for(transcript)
+        out.write_text("".join(parts), encoding="utf-8")
+        _emit({"type": "report_end", "path": str(out)})
+
+    _report_thread = threading.Thread(target=worker, daemon=True)
+    _report_thread.start()
+    return {"ok": True, "transcript": str(transcript)}
+
+
 @app.post("/api/stop")
 def stop() -> dict:
     if _stop is not None:

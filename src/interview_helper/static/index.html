@@ -18,6 +18,8 @@
   button { border: 0; border-radius: 6px; padding: 7px 14px; cursor: pointer; font-weight: 600; }
   #start { background: #2f9e5f; color: #fff; }
   #stop  { background: #b3423f; color: #fff; }
+  #report { background: #3d5a99; color: #fff; }
+  .answer.report-card { border-color: #6b5b95; background: #221e2e; }
   button:disabled { opacity: .45; cursor: default; }
   #status { margin-left: auto; color: #8a919e; font-size: 13px; }
   header label { font-size: 13px; color: #b8bec8; display: flex; align-items: center; gap: 4px; }
@@ -74,6 +76,7 @@
   </label>
   <button id="start">Старт</button>
   <button id="stop" disabled>Стоп</button>
+  <button id="report" title="Отчёт по последней сессии">Отчёт</button>
   <span id="status">не запущено</span>
 </header>
 <main>
@@ -138,6 +141,13 @@ $("start").onclick = async () => {
 
 $("stop").onclick = async () => { await fetch("/api/stop", { method: "POST" }); };
 
+let reportCard = null;
+$("report").onclick = async () => {
+  const r = await (await fetch("/api/report", { method: "POST" })).json();
+  if (!r.ok) { $("status").textContent = r.error; return; }
+  $("report").disabled = true;
+};
+
 function scrollDown(el) { el.parentElement.scrollTop = el.parentElement.scrollHeight; }
 
 new EventSource("/api/events").onmessage = e => {
@@ -169,6 +179,20 @@ new EventSource("/api/events").onmessage = e => {
     answerCards[ev.id].querySelector(".t").append(ev.text); scrollDown($("answers"));
   } else if (ev.type === "answer_end" && answerCards[ev.id]) {
     answerCards[ev.id].classList.remove("streaming"); delete answerCards[ev.id];
+  } else if (ev.type === "report_start") {
+    reportCard = document.createElement("div");
+    reportCard.className = "answer report-card streaming";
+    const q = document.createElement("div"); q.className = "q";
+    q.textContent = `Отчёт по ${ev.transcript}`;
+    const t = document.createElement("div"); t.className = "t";
+    reportCard.append(q, t);
+    $("answers").append(reportCard); scrollDown($("answers"));
+  } else if (ev.type === "report_delta" && reportCard) {
+    reportCard.querySelector(".t").append(ev.text); scrollDown($("answers"));
+  } else if (ev.type === "report_end") {
+    if (reportCard) { reportCard.classList.remove("streaming"); reportCard = null; }
+    $("status").textContent = `Отчёт сохранён: ${ev.path}`;
+    $("report").disabled = false;
   }
 };
 </script>
