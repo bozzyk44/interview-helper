@@ -17,6 +17,43 @@ class Utterance:
     timestamp: float
 
 
+# faster-whisper на тишине/шуме галлюцинирует фиксированным набором «титров» и
+# благодарностей из обучающих субтитров — в речи собеседования их не бывает.
+# Это давало «мусор на экране, когда суфлёр был нужнее всего» (фидбек с реальной
+# встречи). Матчим по подстроке только на коротких самостоятельных репликах,
+# чтобы не срезать живое предложение, где слово попалось по делу.
+_HALLUCINATION_MARKERS = (
+    "продолжение следует",
+    "спасибо за просмотр",
+    "спасибо за внимание",
+    "субтитры",
+    "редактор субтитров",
+    "корректор",
+    "amara.org",
+    "dimatorzok",
+    "thanks for watching",
+    "thank you for watching",
+    "please subscribe",
+    "like and subscribe",
+)
+
+
+def _is_hallucination(text: str) -> bool:
+    low = text.lower()
+    if len(low.strip(" .,!?…-\"'")) <= 1:  # пунктуация или один символ
+        return True
+    return len(low) < 80 and any(m in low for m in _HALLUCINATION_MARKERS)
+
+
+def _keep_segment(seg) -> bool:
+    """Шум проходит VAD, но модель не уверена. Высокая вероятность «не речь»
+    при низком avg_logprob почти всегда означает галлюцинацию — требуем оба,
+    чтобы не срезать тихую, но настоящую речь."""
+    return not (
+        getattr(seg, "no_speech_prob", 0.0) > 0.6 and getattr(seg, "avg_logprob", 0.0) < -0.8
+    )
+
+
 def _load_model(model_size: str):
     """CUDA при наличии GPU и extra `gpu`, иначе CPU/int8 на всех ядрах."""
     import os
@@ -124,7 +161,13 @@ class Transcriber:
         audio = np.concatenate([c.samples for c in buf])
         ts = buf[0].timestamp
         segments, _ = self.model.transcribe(
-            audio, vad_filter=True, beam_size=1, language=self.language
+            audio,
+            vad_filter=True,
+            beam_size=1,
+            language=self.language,
+            condition_on_previous_text=False,  # иначе whisper зацикливает галлюцинацию
         )
-        text = " ".join(s.text.strip() for s in segments).strip()
-        return Utterance(source, text, ts) if text else None
+        text = " ".join(s.text.strip() for s in segments if _keep_segment(s)).strip()
+        if not text or _is_hallucination(text):
+            return None
+        return Utterance(source, text, ts)

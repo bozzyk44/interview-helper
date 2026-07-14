@@ -25,6 +25,19 @@ SYSTEM_PROMPT = (
 
 CONTEXT_CHARS = 6000  # ~2000 токенов скользящего окна
 
+# Параллельный триаж: пока основной ответ уже стримится, дешёвый Haiku решает,
+# осмысленный ли это вопрос. NO — реплика без запроса информации (приветствие,
+# поддакивание, обрывок, шум распознавания). Работает в параллель, чтобы не
+# добавлять латентности; вердикт NO рубит основной ответ и стирает баббл.
+TRIAGE_PROMPT = (
+    "Ты фильтр суфлёра на собеседовании. Дан хвост транскрипта и последняя реплика "
+    "интервьюера. Нужен ли кандидату содержательный ответ-подсказка на эту реплику? "
+    "Ответь строго одним словом: YES или NO. NO — если это приветствие, поддакивание, "
+    "реплика ни о чём, обрывок фразы, шум распознавания или короткая социальная фраза "
+    "без запроса информации. Если сомневаешься — YES."
+)
+TRIAGE_CHARS = 1500  # хвоста транскрипта хватает для контекста, а Haiku отвечает быстрее
+
 CONTEXT_DIR = Path("context")
 CONTEXT_FILES = (("vacancy.md", "Вакансия"), ("resume.md", "Резюме кандидата"))
 CONTEXT_FILE_CHARS = 8000  # ~2500 токенов на файл, чтобы не раздувать промпт
@@ -149,25 +162,44 @@ class Answerer:
             return True
         return any(_fuzzy_question_word(word) for word in head)
 
+    def _transcript(self) -> str:
+        return "\n".join(
+            f"[{'interviewer' if u.source == 'loopback' else 'me'}] {u.text}" for u in self.history
+        )
+
     def cancel(self) -> None:
         """Прерывает текущий ответ (новый вопрос вытесняет старый)."""
         proc = self._proc
         if proc is not None and proc.poll() is None:
             proc.kill()
 
-    def stream_answer(self, question: Utterance) -> Iterator[str]:
-        """Стримит текст ответа по мере генерации."""
-        transcript = "\n".join(
-            f"[{'interviewer' if u.source == 'loopback' else 'me'}] {u.text}" for u in self.history
+    def triage(self, question: Utterance) -> bool:
+        """Осмысленный ли это вопрос? Отдельный дешёвый Haiku-вызов, параллельно
+        основному ответу. Fail-open: при ошибке/пустом ответе считаем, что вопрос
+        стоящий — молча съесть настоящий вопрос хуже, чем показать лишний ответ."""
+        prompt = (
+            f"{TRIAGE_PROMPT}\n\nТранскрипт:\n{self._transcript()[-TRIAGE_CHARS:]}"
+            f"\n\nРеплика интервьюера: {question.text}"
         )
+        verdict = "".join(stream_claude(prompt, "haiku")).strip().upper()
+        return not verdict.startswith("NO")
+
+    def stream_answer(
+        self,
+        question: Utterance,
+        on_proc: Callable[[subprocess.Popen], None] | None = None,
+    ) -> Iterator[str]:
+        """Стримит текст ответа по мере генерации."""
         context_block = f"\n\n{self.context}" if self.context else ""
         prompt = (
             f"{SYSTEM_PROMPT}{context_block}\n\n"
-            f"Транскрипт:\n{transcript}\n\nВопрос интервьюера: {question.text}"
+            f"Транскрипт:\n{self._transcript()}\n\nВопрос интервьюера: {question.text}"
         )
 
         def hold(proc: subprocess.Popen) -> None:
             self._proc = proc
+            if on_proc is not None:
+                on_proc(proc)
 
         yield from stream_claude(
             prompt,

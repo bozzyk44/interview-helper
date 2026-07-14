@@ -78,9 +78,9 @@
     <option>medium</option>
   </select>
   <select id="lang" title="Язык сессии">
-    <option value="">язык: авто</option>
-    <option value="ru">язык: русский</option>
+    <option value="ru" selected>язык: русский</option>
     <option value="en">язык: английский</option>
+    <option value="">язык: авто</option>
   </select>
   <select id="answerModel" title="Модель для ответов">
     <option value="haiku">ответы: haiku</option>
@@ -251,6 +251,8 @@ new EventSource("/api/events").onmessage = e => {
     answerCards[ev.id].querySelector(".t").append(ev.text); scrollDown($("answers"));
   } else if (ev.type === "answer_end" && answerCards[ev.id]) {
     answerCards[ev.id].classList.remove("streaming"); delete answerCards[ev.id];
+  } else if (ev.type === "answer_discard" && answerCards[ev.id]) {
+    answerCards[ev.id].remove(); delete answerCards[ev.id];  // триаж решил: не вопрос
   } else if (ev.type === "report_start") {
     reportCard = document.createElement("div");
     reportCard.className = "answer report-card streaming";

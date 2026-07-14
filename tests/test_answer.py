@@ -73,3 +73,25 @@ def test_history_window_trims():
     for _ in range(50):
         a.add(_utt("x" * 500))
     assert sum(len(u.text) for u in a.history) <= 6000
+
+
+def _mock_stream(monkeypatch, chunks):
+    monkeypatch.setattr("interview_helper.answer.stream_claude", lambda *a, **k: iter(chunks))
+
+
+def test_triage_rejects_non_question(monkeypatch):
+    _mock_stream(monkeypatch, ["NO"])
+    assert Answerer(model="haiku").triage(_utt("Угу, окей, идём дальше.")) is False
+
+
+def test_triage_accepts_question(monkeypatch):
+    _mock_stream(monkeypatch, ["YES"])
+    assert Answerer(model="haiku").triage(_utt("Какие типы индексов в Postgres?")) is True
+
+
+def test_triage_fails_open_on_error(monkeypatch):
+    # ошибка/пустой ответ триажа не должны молча съедать настоящий вопрос
+    _mock_stream(monkeypatch, ["[claude завершился с кодом 1: boom]"])
+    assert Answerer(model="haiku").triage(_utt("Расскажи про GIL")) is True
+    _mock_stream(monkeypatch, [])
+    assert Answerer(model="haiku").triage(_utt("Расскажи про GIL")) is True
